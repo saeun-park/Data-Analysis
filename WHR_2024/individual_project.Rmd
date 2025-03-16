@@ -1,0 +1,422 @@
+---
+title: "Individual Project"
+author: "Saeun Park"
+output: html_document
+---
+
+# The World Happiness Report 2024
+
+## 0. Load Libraries and Dataset
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+library(reshape2)
+library(tidyverse) # Clustering
+library(conflicted) 
+library(factoextra) 
+```
+
+```{r,eval=TRUE}
+rm(list=ls())
+whr = read.csv('/Users/saeun/Desktop/Courses/Modern computer-based methods of statistics/individual_project/WHR2024.csv')
+
+```
+
+## 1. Data Structure
+
+```{r,eval=TRUE}
+head(whr)
+dim(whr) # (143, 11)
+str(whr)
+summary(whr)
+```
+
+## 2. Data Preprocessing
+
+### 2.1. Rename Columns
+
+```{r,eval=TRUE}
+colnames(whr) = c('Country', 'Score', 'upperwhisker', 'lowerwhisker',
+                  'LogGDP', 'SocialSupport', 'LifeExpectancy', 
+                  'Freedom', 'Generosity', 'Corruption', 'DystopiaResidual')
+```
+
+### 2.2. Remove Missing Values
+
+Removing 'Bahrain', 'Tajikistan', 'State of Palestine'
+
+```{r}
+colSums(is.na(whr))
+whr[apply(whr, 1, function(x) any(is.na(x))), ] # Identifying Rows with Missing Values
+whr = whr[!apply(whr, 1, function(x) any(is.na(x))), ] # Remove the Rows
+dim(whr) # (140, 11)
+```
+
+### 2.3. Add Region and SubRegion Columns to the Dataset
+
+<https://www.kaggle.com/datasets/andradaolteanu/country-mapping-iso-continent-region>
+
+```{r}
+# Mapping Using External Data
+cont = read.csv('/Users/saeun/Desktop/Courses/Modern computer-based methods of statistics/individual_project/continents2.csv')
+head(cont)
+cont = cont[,c('name', 'region', 'sub.region')]
+colnames(cont) = c('Country', 'Region', 'SubRegion')
+whr_new = merge(whr, cont, by='Country', all.x=TRUE)
+
+# Manually Mapping 10 Unmapped Rows
+whr_new[is.na(whr_new$Region),]['Country']
+map = data.frame(
+  Country = c("Bosnia and Herzegovina", "Congo (Brazzaville)", "Congo (Kinshasa)", 
+              "Czechia", "Hong Kong S.A.R. of China", "Ivory Coast", 
+              "Kosovo", "North Macedonia", "Taiwan Province of China", "Turkiye"),
+  Region = c("Europe", "Africa", "Africa", 
+             "Europe", "Asia", "Africa", 
+             "Europe", "Europe", "Asia", "Asia"),
+  SubRegion = c("Southern Europe", "Sub-Saharan Africa", "Sub-Saharan Africa", 
+                "Eastern Europe", "Eastern Asia", "Sub-Saharan Africa", 
+                "Southern Europe", "Southern Europe", "Eastern Asia", "Western Asia")
+)
+whr_new = merge(whr_new, map, by='Country', all.x=TRUE)
+
+whr_new$Region = ifelse(is.na(whr_new$Region.x), whr_new$Region.y, whr_new$Region.x)
+whr_new$SubRegion = ifelse(is.na(whr_new$SubRegion.x), whr_new$SubRegion.y, whr_new$SubRegion.x)
+
+whr_new = whr_new %>%
+  dplyr::select(-Region.x, -SubRegion.x, -Region.y, -SubRegion.y)
+
+# Verifying the Results
+sum(is.na(whr_new['Region']))
+```
+
+## 3. Data Visualization
+
+### 3.1. Setting
+
+num_var : Storing Only Numeric Variables
+
+num_data : Storing Numeric Variable Data
+
+```{r}
+num_var = setdiff(colnames(whr_new), c("Country", 'upperwhisker', 'lowerwhisker', "Region", "SubRegion"))
+num_data = whr_new[,num_var]
+```
+
+### 3.2. Boxplots for Each Variable
+
+```{r}
+plot_list = list()
+for (var in num_var) {
+  p = boxplot(num_data[[var]], main = paste("Boxplot of", var), col = "lightblue", outline = TRUE)
+  
+  plot_list[[var]] = p
+}
+```
+
+### 3.3. Density Distribution for Each Variable
+
+```{r}
+plot_list1 = list()
+
+for (var in num_var) {
+  p = ggplot(whr_new, aes_string(x = var)) +
+    geom_density(fill = "blue", alpha = 0.3) +
+    labs(title = paste("Distribution of", var), x = var, y = "Density") +
+    theme_minimal()
+  
+  plot_list1[[var]] = p
+}
+print(plot_list1)
+#grid.arrange(grobs = plot_list1, ncol = 2)
+```
+
+### 3.4. Correlation Matrix
+
+```{r}
+corr_matrix = cor(num_data, use = "complete.obs")
+melt = melt(corr_matrix) # melt dimension
+
+ggplot(data = melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), size = 3, color = "black") + 
+  scale_fill_gradient(low = "white", high = "darkgreen") +
+  labs(title = "Correlation Matrix") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+### 3.5. Relationship between LifeExpectancy And LogGDP
+
+```{r}
+ggplot(whr_new, aes(x = LifeExpectancy, y = LogGDP)) +
+  geom_point(color = "red", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "darkred") +
+  labs(title = "Relationship between A and B", 
+       x = "LifeExpectancy", y = "LogGDP")
+```
+
+### 3.6. Relationship between SocialSupport And Score
+
+```{r}
+ggplot(whr_new, aes(x = SocialSupport, y = Score)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "darkblue") +
+  labs(title = "Relationship between A and B", 
+       x = "SocialSupport", y = "Score")
+```
+
+### 3.7. Barplots of the Interesting Countries for Each Variable
+
+```{r}
+southkorea_neighbors = c("South Korea", "Japan", "China")
+hungary_neighbors = c("Hungary", "Slovakia", "Austria", "Czechia", 
+                       "Slovenia", "Croatia", "Serbia", "Romania")
+highscore_countries = c("Finland", "Denmark", "Iceland", "Sweden")
+
+interesting_countries = c(southkorea_neighbors, hungary_neighbors, highscore_countries)
+
+plot_list2 = list()
+for (var in num_var) {
+  filtered_data = whr_new %>%
+    dplyr::filter(Country %in% interesting_countries)
+  
+  filtered_data = filtered_data %>%
+    mutate(Group = case_when(
+      Country %in% southkorea_neighbors ~ "South Korea & Neighbors",
+      Country %in% hungary_neighbors ~ "Hungary & Neighbors",
+      Country %in% highscore_countries ~ "High Score Countries"
+    ))
+  
+  p = ggplot(filtered_data, aes(x = reorder(Country, .data[[var]]), y = .data[[var]], fill = Group)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = SubRegion), position = position_dodge(width = 0.9), size = 2) +
+    coord_flip() +
+    labs(title = paste("Barplot of", var), x = "Country", y = var) +
+    scale_fill_manual(values = c("South Korea & Neighbors" = "lightblue", 
+                                 "Hungary & Neighbors" = "orange", 
+                                 "High Score Countries" = "lightgreen")) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.y = element_text(size = 7),
+      legend.position = "bottom"
+    )
+  
+  plot_list2[[var]] = p
+}
+plot_list2
+
+```
+
+## 4. Data Analysis
+
+### 4.1. Clustering Analysis
+
+#### 4.1.1 Determining the Number of Clusters
+
+Using Elbow Method (k=5)
+
+```{r}
+num_var = setdiff(num_var, "Score")
+df = whr_new[,num_var]
+# Scaling Data
+df = scale(df)
+
+# Determine the optimal number of clusters using the Elbow Method
+wss = numeric(30) # Within-cluster Sum of Square
+for (k in 1:30) {
+  model = kmeans(df, centers = k, nstart = 25)
+  wss[k] = model$tot.withinss
+}
+
+# Visualize the Elbow Plot
+plot(1:30, wss, type = "b", pch = 19, xlab = "Number of Clusters (K)", ylab = "Total Within-SS")
+```
+
+Using Hierarchial Clustering (k=9)
+
+```{r}
+dist = dist(df)
+hc = hclust(dist, method = "ward.D2")
+
+# Visualize Dendrogram
+plot(hc, labels = FALSE, main = "Dendrogram", xlab = "", sub = "")
+clusters_hc = cutree(hc, k = 10)
+```
+
+```{r}
+k = 10
+
+set.seed(123)
+kmeans_result = kmeans(df, centers = k, nstart = 25)
+
+# Add clustering results to the whr_new data
+whr_new$Cluster = as.factor(kmeans_result$cluster)
+```
+
+#### 4.1.2. Plotting the Result of Clustering Analysis
+
+```{r}
+all(rownames(df) == rownames(whr_new)) #True
+
+fviz_cluster(kmeans_result, data = df, geom = "point", ellipse.type = "norm", 
+             ggtheme = theme_minimal(), main = "K-Means Clustering Results") + 
+  geom_text(aes(label = whr_new$Country), size = 2.5, vjust = -1)
+```
+
+```{r}
+# Average Score by Cluster
+cluster_avg_score = whr_new %>%
+  group_by(Cluster) %>%
+  summarise(avg_score = mean(Score, na.rm = TRUE))
+
+ggplot(cluster_avg_score, aes(x = as.factor(Cluster), y = avg_score, fill = as.factor(Cluster))) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Average Score by Cluster",
+    x = "Cluster",
+    y = "Average Score"
+  ) +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+```{r}
+## Boxplots for each variable grouped by clusters
+boxplots = lapply(num_var, function(var) {
+  ggplot(whr_new, aes(x = as.factor(Cluster), y = .data[[var]], fill = as.factor(Cluster))) +
+    geom_boxplot() +
+    labs(title = paste("Boxplot of", var), x = "Cluster", y = var) +
+    theme_minimal() +
+    theme(legend.position = "none")
+})
+# grid.arrange(grobs = boxplots, ncol = 3) 
+print(boxplots)
+```
+
+```{r}
+# Computing Averages for Each Cluster
+summary = whr_new %>%
+  group_by(Cluster) %>%
+  summarise(across(c(LogGDP, SocialSupport, LifeExpectancy, Freedom, Generosity, Corruption, DystopiaResidual), mean, na.rm = TRUE))
+
+print(summary)
+
+# Wide format -> Long format
+long_summary = summary %>%
+  pivot_longer(cols = -Cluster, names_to = "Variable", values_to = "Mean")
+
+# Visualization 
+ggplot(long_summary, aes(x = Variable, y = Mean, fill = as.factor(Cluster))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Mean of Variables by Cluster", x = "Variable", y = "Mean") +
+  theme_minimal()
+```
+
+```{r}
+# Number of Regions by Cluster
+region_summary = whr_new %>%
+  group_by(Cluster, Region) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  arrange(Cluster, desc(Count))
+
+# Visualization
+ggplot(region_summary, aes(x = as.factor(Cluster), y = Count, fill = Region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Set1") + 
+  labs(title = "Number of Regions by Cluster", x = "Cluster", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+```
+
+#### 4.1.3. Interesting Countries
+
+```{r}
+interesting_df = whr_new %>%
+  dplyr::filter(Country %in% interesting_countries)
+interesting_df[c('Country', 'Cluster')]
+```
+
+```{r}
+ggplot(whr_new, aes(x = LogGDP, y = Score, color = Cluster)) +
+  geom_point(alpha = 0.6) +
+  geom_point(data = interesting_df, aes(x = LogGDP, y = Score), color = "black", size = 3) +
+  ggtitle("World Happiness by Log GDP with Interesting Countries") +
+  theme_minimal()
+```
+
+```{r}
+# Visualization of Cluster Distribution by Region
+region_distribution = interesting_df %>%
+  group_by(Region, Cluster, Country) %>%
+  summarise(count = n(), .groups = 'drop')
+
+ggplot(region_distribution, aes(x = Region, fill = as.factor(Cluster), y = count)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = Country), position = position_stack(vjust = 0.5), size = 3, check_overlap = TRUE) +
+  ggtitle("Cluster Distribution by Region") +
+  theme_minimal()
+
+# Visualization of Cluster Distribution by SubRegion
+subregion_distribution = interesting_df %>%
+  group_by(SubRegion, Cluster, Country) %>%
+  summarise(count = n(), .groups = 'drop')
+
+ggplot(subregion_distribution, aes(x = SubRegion, fill = as.factor(Cluster), y = count)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = Country), position = position_stack(vjust = 0.5), size = 3, check_overlap = TRUE) +
+  ggtitle("Cluster Distribution by SubRegion") +
+  theme_minimal()
+
+```
+
+### 4.2. Principal Component Analysis
+
+```{r}
+df_pca = whr_new %>%
+  select(-Cluster, -Score, -upperwhisker, -lowerwhisker) %>%
+  select_if(is.numeric)  # select only numeric variables
+
+pca_res = prcomp(df_pca, scale = TRUE)
+
+# Scree Plot
+fviz_eig(pca_res, addlabels = TRUE, geom = "bar", bar_fill = "skyblue")
+
+# Contributions of Variables
+pca_res$rotation
+fviz_pca_var(pca_res, col.var = "contrib", gradient.cols = c("blue", "green", "red"))
+```
+
+### 4.3. Logistic Regression
+
+```{r}
+# Extraction of Principal Components (PC1, PC2, PC3)
+pca_scores = data.frame(pca_res$x[, 1:3])
+colnames(pca_scores) = paste0("PC", 1:3)
+
+logit_data = cbind(pca_scores, Cluster = whr_new$Cluster)
+
+# Logistic Regression Model
+library(nnet)
+logit = multinom(Cluster ~., data = logit_data)
+summary(logit)
+```
+
+```{r}
+
+z_scores = summary(logit)$coefficients / summary(logit)$standard.errors
+p_values = (1 - pnorm(abs(z_scores), 0, 1)) * 2
+print(p_values)
+```
